@@ -19,20 +19,24 @@ const {
 export const getUserInfo = async ({ userId }: getUserInfoProps) => {
   try {
     const { database } = await createAdminClient();
+
     const user = await database.listDocuments(
       DATABASE_ID!,
       USER_COLLECTION_ID!,
       [Query.equal('userId', [userId])]
     )
+
     return parseStringify(user.documents[0]);
   } catch (error) {
     console.log(error)
   }
 }
+
 export const signIn = async ({ email, password }: signInProps) => {
   try {
     const { account } = await createAdminClient();
     const session = await account.createEmailPasswordSession(email, password);
+
     cookies().set("appwrite-session", session.secret, {
       path: "/",
       httpOnly: true,
@@ -42,8 +46,65 @@ export const signIn = async ({ email, password }: signInProps) => {
 
     const user = await getUserInfo({ userId: session.userId }) 
 
-    return parseStringify( response);
+    return parseStringify(user);
   } catch (error) {
+    console.error('Error', error);
+  }
+}
+
+export const signUp = async ({ password, ...userData }: SignUpParams) => {
+  const { email, firstName, lastName } = userData;
+  
+  let newUserAccount;
+
+  try {
+    const { account, database } = await createAdminClient();
+
+    newUserAccount = await account.create(
+      ID.unique(), 
+      email, 
+      password, 
+      `${firstName} ${lastName}`
+    );
+
+    if(!newUserAccount) throw new Error('Error creating user')
+
+    const dwollaCustomerUrl = await createDwollaCustomer({
+      ...userData,
+      type: 'personal'
+    })
+
+    if(!dwollaCustomerUrl) throw new Error('Error creating Dwolla customer')
+
+    const dwollaCustomerId = extractCustomerIdFromUrl(dwollaCustomerUrl);
+
+    const newUser = await database.createDocument(
+      DATABASE_ID!,
+      USER_COLLECTION_ID!,
+      ID.unique(),
+      {
+        ...userData,
+        userId: newUserAccount.$id,
+        dwollaCustomerId,
+        dwollaCustomerUrl
+      }
+    )
+
+    const session = await account.createEmailPasswordSession(email, password);
+
+    cookies().set("appwrite-session", session.secret, {
+      path: "/",
+      httpOnly: true,
+      sameSite: "strict",
+      secure: true,
+    });
+
+    return parseStringify(newUser);
+  } catch (error) {
+    console.error('Error', error);
+  }
+}
+
 export async function getLoggedInUser() {
   try {
     const { account } = await createSessionClient();
@@ -133,7 +194,7 @@ export const exchangePublicToken = async ({
 
     const accessToken = response.data.access_token;
     const itemId = response.data.item_id;
-
+    
     // Get account information from Plaid using the access token
     const accountsResponse = await plaidClient.accountsGet({
       access_token: accessToken,
@@ -157,7 +218,7 @@ export const exchangePublicToken = async ({
       processorToken,
       bankName: accountData.name,
     });
-
+    
     // If the funding source URL is not created, throw an error
     if (!fundingSourceUrl) throw Error;
 
@@ -214,16 +275,21 @@ export const getBank = async ({ documentId }: getBankProps) => {
     console.log(error)
   }
 }
+
 export const getBankByAccountId = async ({ accountId }: getBankByAccountIdProps) => {
   try {
     const { database } = await createAdminClient();
+
     const bank = await database.listDocuments(
       DATABASE_ID!,
       BANK_COLLECTION_ID!,
       [Query.equal('accountId', [accountId])]
     )
+
     if(bank.total !== 1) return null;
+
     return parseStringify(bank.documents[0]);
   } catch (error) {
     console.log(error)
   }
+}

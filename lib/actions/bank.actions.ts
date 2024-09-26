@@ -79,6 +79,7 @@ export const getAccount = async ({ appwriteItemId }: getAccountProps) => {
     const transferTransactionsData = await getTransactionsByBankId({
       bankId: bank.$id,
     });
+
     const transferTransactions = transferTransactionsData.documents.map(
       (transferData: Transaction) => ({
         id: transferData.$id,
@@ -117,3 +118,68 @@ export const getAccount = async ({ appwriteItemId }: getAccountProps) => {
       const allTransactions = [...transactions, ...transferTransactions].sort(
       (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
     );
+
+    return parseStringify({
+      data: account,
+      transactions: allTransactions,
+    });
+  } catch (error) {
+    console.error("An error occurred while getting the account:", error);
+  }
+};
+
+// Get bank info
+export const getInstitution = async ({
+  institutionId,
+}: getInstitutionProps) => {
+  try {
+    const institutionResponse = await plaidClient.institutionsGetById({
+      institution_id: institutionId,
+      country_codes: ["US"] as CountryCode[],
+    });
+
+    const intitution = institutionResponse.data.institution;
+
+    return parseStringify(intitution);
+  } catch (error) {
+    console.error("An error occurred while getting the accounts:", error);
+  }
+};
+
+// Get transactions
+export const getTransactions = async ({
+  accessToken,
+}: getTransactionsProps) => {
+  let hasMore = true;
+  let transactions: any = [];
+
+  try {
+    // Iterate through each page of new transaction updates for item
+    while (hasMore) {
+      const response = await plaidClient.transactionsSync({
+        access_token: accessToken,
+      });
+
+      const data = response.data;
+
+      transactions = response.data.added.map((transaction) => ({
+        id: transaction.transaction_id,
+        name: transaction.name,
+        paymentChannel: transaction.payment_channel,
+        type: transaction.payment_channel,
+        accountId: transaction.account_id,
+        amount: transaction.amount,
+        pending: transaction.pending,
+        category: transaction.category ? transaction.category[0] : "",
+        date: transaction.date,
+        image: transaction.logo_url,
+      }));
+
+      hasMore = data.has_more;
+    }
+
+    return parseStringify(transactions);
+  } catch (error) {
+    console.error("An error occurred while getting the accounts:", error);
+  }
+};
